@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
-// Değişiklik: puppeteer-core ve chrome-aws-lambda import ediyoruz
 import puppeteer from "puppeteer-core";
-import chromium from "chrome-aws-lambda";
+import chromium from "@sparticuz/chromium";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -22,13 +21,11 @@ export async function GET(request) {
   let browser = null;
 
   try {
-    // Değişiklik: Vercel ortamı için özel yapılandırma
-    const executablePath =
-      (await chromium.executablePath) || process.env.CHROME_EXECUTABLE_PATH;
-
+    // Yeni @sparticuz/chromium paketini kullanıyoruz
     browser = await puppeteer.launch({
       args: chromium.args,
-      executablePath: executablePath,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
       headless: chromium.headless,
     });
 
@@ -38,7 +35,11 @@ export async function GET(request) {
     );
     await page.goto(eksiUrl, { waitUntil: "networkidle2" });
     const html = await page.content();
-    await browser.close();
+
+    // Tarayıcıyı kapatma işlemini bir sonraki tick'e erteliyoruz, bu bazı Vercel hatalarını önleyebilir
+    setTimeout(async () => {
+      if (browser) await browser.close();
+    }, 0);
 
     const $ = cheerio.load(html);
 
