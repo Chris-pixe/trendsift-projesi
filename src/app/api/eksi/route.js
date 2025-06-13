@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
-import puppeteer from "puppeteer";
+// Değişiklik: puppeteer-core ve chrome-aws-lambda import ediyoruz
+import puppeteer from "puppeteer-core";
+import chromium from "chrome-aws-lambda";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -17,28 +19,27 @@ export async function GET(request) {
     keyword.replace(/\s+/g, "-")
   )}`;
 
-  let browser = null; // Tarayıcıyı dışarıda tanımlıyoruz ki her durumda kapatabilelim
+  let browser = null;
 
   try {
-    // Puppeteer'ı başlatıyoruz
-    browser = await puppeteer.launch({ headless: "new" });
-    const page = await browser.newPage();
+    // Değişiklik: Vercel ortamı için özel yapılandırma
+    const executablePath =
+      (await chromium.executablePath) || process.env.CHROME_EXECUTABLE_PATH;
 
-    // Gerçekçi bir User-Agent belirliyoruz
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath: executablePath,
+      headless: chromium.headless,
+    });
+
+    const page = await browser.newPage();
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     );
-
-    // Sayfaya gidiyoruz ve tüm ağ trafiğinin durmasını bekliyoruz
     await page.goto(eksiUrl, { waitUntil: "networkidle2" });
-
-    // JavaScript'lerin çalışması sonucu oluşan tam HTML'i alıyoruz
     const html = await page.content();
-
-    // Tarayıcı ile işimiz bitti, kapatıyoruz
     await browser.close();
 
-    // Buradan sonrası aynı, Cheerio ile HTML'i işliyoruz
     const $ = cheerio.load(html);
 
     const entries = [];
@@ -58,20 +59,10 @@ export async function GET(request) {
       }
     });
 
-    // Eğer hiç entry bulunamazsa, bu sayfanın var olmadığını varsayabiliriz.
-    if (entries.length === 0) {
-      console.log(
-        `Ekşi Sözlük'te "${keyword}" için entry bulunamadı. Sayfa yapısı değişmiş veya başlık mevcut olmayabilir.`
-      );
-    }
-
     return NextResponse.json(entries);
   } catch (error) {
     console.error("Ekşi Sözlük scraping hatası (Puppeteer):", error);
-    // Hata durumunda tarayıcının açık kalmadığından emin oluyoruz
-    if (browser) {
-      await browser.close();
-    }
+    if (browser) await browser.close();
     return NextResponse.json(
       { error: "Ekşi Sözlük verileri çekilirken bir hata oluştu." },
       { status: 500 }
