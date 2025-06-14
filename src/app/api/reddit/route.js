@@ -1,11 +1,12 @@
-import snoowrap from 'snoowrap';
-import { NextResponse } from 'next/server';
-import Sentiment from 'sentiment'; // Bu satırı ekleyin
-
+import { NextResponse } from "next/server";
+import snoowrap from "snoowrap";
+import Sentiment from "sentiment";
+import dbConnect from "@/lib/dbConnect"; // EKLENDİ
+import Post from "@/models/Post"; // EKLENDİ
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const keyword = searchParams.get('keyword');
+  const keyword = searchParams.get("keyword");
 
   if (!keyword) {
     return NextResponse.json(
@@ -15,46 +16,58 @@ export async function GET(request) {
   }
 
   try {
-    // --- YENİ BAĞLANTI YÖNTEMİ ---
+    await dbConnect(); // Veritabanına bağlanıyoruz
+
     const r = new snoowrap({
-        userAgent: process.env.REDDIT_USER_AGENT,
-        clientId: process.env.REDDIT_CLIENT_ID,
-        clientSecret: process.env.REDDIT_CLIENT_SECRET,
-        refreshToken: process.env.REDDIT_REFRESH_TOKEN,
+      userAgent: process.env.REDDIT_USER_AGENT,
+      clientId: process.env.REDDIT_CLIENT_ID,
+      clientSecret: process.env.REDDIT_CLIENT_SECRET,
+      refreshToken: process.env.REDDIT_REFRESH_TOKEN,
     });
-    const sentiment = new Sentiment(); // Bu satırı ekleyin
 
-
-    // --- DEĞİŞİKLİK BURADA ---
-    // Artık bir subreddit adı aramak yerine, Reddit genelinde bu anahtar kelimeyi içeren
-    // popüler (hot) gönderileri arıyoruz.
+    const sentiment = new Sentiment();
     const searchResults = await r.search({
       query: keyword,
-      sort: 'hot', // 'relevance', 'new', 'top' gibi seçenekler de kullanılabilir
-      time: 'week' // Son bir haftadaki sonuçlar
+      sort: "hot",
+      time: "week",
     });
 
-    // Gelen veriyi ayıklarken duygu skorunu da ekliyoruz
-    const simplifiedResults = searchResults.map(post => {
-    const sentimentResult = sentiment.analyze(post.title);
-        return {
-            id: post.id,
-            title: post.title,
-            score: post.score,
-            num_comments: post.num_comments,
-            url: `https://www.reddit.com${post.permalink}`,
-            sentiment_score: sentimentResult.score // Duygu skorunu ekliyoruz
-        };
+    const postsToSave = searchResults.map((post) => {
+      const sentimentResult = sentiment.analyze(post.title);
+      return {
+        platform: "reddit",
+        postId: post.id,
+        title: post.title,
+        score: post.score,
+        num_comments: post.num_comments,
+        sentiment_score: sentimentResult.score,
+        url: `https://www.reddit.com${post.permalink}`,
+        searchKeyword: keyword.toLowerCase(),
+      };
     });
 
-    
-    return NextResponse.json(simplifiedResults);
+    // Veritabanına kaydetme işlemi
+    if (postsToSave.length > 0) {
+      try {
+        // ordered: false -> Mükerrer kayıt hatası olsa bile diğerlerini kaydetmeye devam et
+        await Post.insertMany(postsToSave, { ordered: false });
+        console.log(
+          `${postsToSave.length} Reddit postu veritabanına eklendi/güncellendi.`
+        );
+      } catch (dbError) {
+        // Hatanın sebebi mükerrer kayıt ise bu normaldir, görmezden gel. Değilse logla.
+        if (dbError.code !== 11000) {
+          console.error("Reddit DB yazma hatası:", dbError);
+        }
+      }
+    }
 
+    // Kullanıcıya yine de veriyi hemen gösteriyoruz
+    return NextResponse.json(postsToSave);
   } catch (error) {
-    // Terminalde daha detaylı hata görmek için
-    console.error('Reddit API Hatası:', error.message || error);
+    console.error("Reddit API Hatası:", error.message || error);
     return NextResponse.json(
-      { error: 'Reddit verileri çekilirken bir hata oluştu.' },
+      { error: "Reddit verileri çekilirken bir hata oluştu." },
       { status: 500 }
     );
   }

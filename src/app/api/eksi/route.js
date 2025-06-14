@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
-import * as cheerio from "cheerio";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
+import dbConnect from "@/lib/dbConnect";
+import Post from "@/models/Post";
+
+const LOCAL_CHROME_EXECUTABLE =
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -21,46 +25,76 @@ export async function GET(request) {
   let browser = null;
 
   try {
-    // Yeni @sparticuz/chromium paketini kullanıyoruz
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
+    await dbConnect();
+    const isDevelopment = process.env.NODE_ENV === "development";
+    const executablePath = isDevelopment
+      ? LOCAL_CHROME_EXECUTABLE
+      : await chromium.executablePath();
+    const browserOptions = {
+      args: isDevelopment ? [] : chromium.args,
+      defaultViewport: isDevelopment
+        ? { width: 1280, height: 800 }
+        : chromium.defaultViewport,
+      executablePath: executablePath,
+      headless: isDevelopment ? false : chromium.headless,
+    };
 
+    browser = await puppeteer.launch(browserOptions);
     const page = await browser.newPage();
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-    );
     await page.goto(eksiUrl, { waitUntil: "networkidle2" });
-    const html = await page.content();
 
-    // Tarayıcıyı kapatma işlemini bir sonraki tick'e erteliyoruz, bu bazı Vercel hatalarını önleyebilir
-    setTimeout(async () => {
-      if (browser) await browser.close();
-    }, 0);
+    // --- YENİ VERİ ÇEKME YÖNTEMİ ---
+    // Cheerio yerine, tarayıcının kendi içinde bir script çalıştırıyoruz.
+    const entriesFromBrowser = await page.evaluate(() => {
+      const entries = [];
+      const entryItems = document.querySelectorAll("li[data-id]");
 
-    const $ = cheerio.load(html);
+      entryItems.forEach((element, index) => {
+        if (index >= 10) return; // Sadece ilk 10 entry
 
-    const entries = [];
-    $("#entry-item-list > li").each((index, element) => {
-      if (index >= 10) return;
-      const content = $(element).find(".content").text().trim();
-      const author = $(element).find(".entry-author").text().trim();
-      const entryId = $(element).attr("data-id");
+        const content = element.querySelector(".content")?.innerText.trim();
+        const author = element.querySelector(".entry-author")?.innerText.trim();
+        const entryId = element.getAttribute("data-id");
 
-      if (content && author && entryId) {
-        entries.push({
-          id: entryId,
-          content: content,
-          author: author,
-          url: `https://eksisozluk.com/entry/${entryId}`,
-        });
-      }
+        if (content && author && entryId) {
+          entries.push({
+            platform: "eksi",
+            postId: entryId,
+            content: content,
+            author: author,
+            url: `https://eksisozluk.com/entry/${entryId}`,
+          });
+        }
+      });
+      return entries;
     });
 
-    return NextResponse.json(entries);
+    console.log(
+      `[Eksi API] Tarayıcı içinden bulunan entry sayısı: ${entriesFromBrowser.length}`
+    );
+
+    // searchKeyword alanını sunucu tarafında ekliyoruz
+    const entriesToSave = entriesFromBrowser.map((entry) => ({
+      ...entry,
+      searchKeyword: keyword.toLowerCase(),
+    }));
+
+    await browser.close();
+
+    if (entriesToSave.length > 0) {
+      try {
+        await Post.insertMany(entriesToSave, { ordered: false });
+        console.log(
+          `${entriesToSave.length} Ekşi Sözlük entry'si veritabanına eklendi/güncellendi.`
+        );
+      } catch (dbError) {
+        if (dbError.code !== 11000) {
+          console.error("Ekşi DB yazma hatası:", dbError);
+        }
+      }
+    }
+
+    return NextResponse.json(entriesToSave);
   } catch (error) {
     console.error("Ekşi Sözlük scraping hatası (Puppeteer):", error);
     if (browser) await browser.close();
