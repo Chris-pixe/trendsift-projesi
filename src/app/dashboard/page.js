@@ -127,7 +127,12 @@ export default function DashboardPage() {
                 key={kw._id}
                 className="flex justify-between items-center bg-gray-700 p-4 rounded-md"
               >
-                <p className="text-lg">{kw.keyword}</p>
+                <Link
+                  href={`/dashboard/${encodeURIComponent(kw.keyword)}`}
+                  className="flex-grow"
+                >
+                  <p className="text-lg">{kw.keyword}</p>
+                </Link>
                 <button
                   onClick={() => handleDeleteKeyword(kw._id)}
                   className="text-red-500 hover:text-red-400 font-semibold"
@@ -137,9 +142,33 @@ export default function DashboardPage() {
               </div>
             ))
           ) : (
-            <p className="text-gray-400">
-              Henüz takip ettiğiniz bir kelime yok.
-            </p>
+            <div className="text-center py-16 px-6 bg-gray-700/50 rounded-lg">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="mx-auto h-12 w-12 text-gray-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                />
+              </svg>
+              <h3 className="mt-4 text-xl font-semibold text-white">
+                Takip Listeniz Henüz Boş
+              </h3>
+              <p className="mt-2 text-md text-gray-400">
+                Başlamak için yukarıdaki kutuya bir konu, marka veya anahtar
+                kelime yazıp 'Ekle' butonuna basın.
+              </p>
+              <p className="mt-1 text-md text-gray-400">
+                TrendSift, bu kelimeyle ilgili gelişmeleri sizin için takip
+                etmeye başlayacak.
+              </p>
+            </div>
           )}
         </div>
       </div>

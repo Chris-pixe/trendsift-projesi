@@ -23,6 +23,7 @@ const COLORS = {
   neutral: "#6b7280",
   reddit: "#ff4500",
   eksi: "#16a34a",
+  twitter: "#1d9bf0", // Twitter için renk eklendi
   count: "#3b82f6",
   sentimentLine: "#f97316",
 };
@@ -56,18 +57,27 @@ export default function AnalysisCharts({ results, historyData }) {
       },
       { name: "Nötr", value: sentimentCounts.neutral, fill: COLORS.neutral },
     ].filter((item) => item.value > 0);
+
+    // --- DEĞİŞİKLİK BURADA ---
+    // Platform sayımına Twitter'ı da ekliyoruz
     const platformCounts = results.reduce(
       (acc, curr) => {
         if (curr.platform === "reddit") acc.reddit += 1;
         else if (curr.platform === "eksi") acc.eksi += 1;
+        else if (curr.platform === "twitter") acc.twitter += 1; // Twitter sayacı eklendi
         return acc;
       },
-      { reddit: 0, eksi: 0 }
-    );
+      { reddit: 0, eksi: 0, twitter: 0 }
+    ); // Başlangıç objesine twitter eklendi
+
+    // Grafik verisine Twitter'ı da ekliyoruz
     const platformData = [
       { name: "Reddit", adet: platformCounts.reddit, fill: COLORS.reddit },
       { name: "Ekşi Sözlük", adet: platformCounts.eksi, fill: COLORS.eksi },
+      { name: "Twitter", adet: platformCounts.twitter, fill: COLORS.twitter }, // Twitter verisi eklendi
     ];
+    // --- DEĞİŞİKLİK SONU ---
+
     return { sentimentData, platformData };
   }, [results]);
 
